@@ -123,11 +123,11 @@ def get_bot_name():
         connection = heroku3.from_key(token)
         for app in connection.apps():
             app_name = app.name
-            if app_name.endswith('second'):
-                app_name = re.sub('-second', '', app_name, 1)
-                host = 'One'
             if app_name.endswith('first'):
                 app_name = re.sub('-first', '', app_name, 1)
+                host = 'One'
+            if app_name.endswith('second'):
+                app_name = re.sub('-second', '', app_name, 1)
                 host = 'Two'
     return app_name, host
 
