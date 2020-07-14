@@ -5,11 +5,12 @@ from time import sleep
 from bs4 import BeautifulSoup
 from datetime import datetime
 from additional.objects import thread_exec as executive
-from additional.objects import bold, query, printer, get_bot_name, start_message, start_main_bot
+from additional.objects import bold, query, printer, start_message, start_main_bot
 
 stamp1 = int(datetime.now().timestamp())
-bot = start_main_bot('non-async', '659292396:AAEeJKTEU4g2168cADrQx6QmN7IzSrJX_Ok')
+token = '659292396:AAEeJKTEU4g2168cADrQx6QmN7IzSrJX_Ok'
 lot_updater_channel = 'https://t.me/lot_updater/'
+bot = start_main_bot('non-async', token)
 idMe = 396978030
 server = {
     'eu': {
@@ -32,23 +33,25 @@ for s in server:
 
 
 if server['eu']['au_post'] and server['ru']['au_post']:
-    start_message(*get_bot_name(), stamp1)
+    start_message(token, stamp1)
 else:
     additional_text = 'Нет подключения к ' + lot_updater_channel + '\n' + bold('Бот выключен')
-    start_message('detector()', stamp1, additional_text)
+    start_message(token, stamp1, additional_text)
     _thread.exit()
 
 
 def former(text):
+    response, get_au_id = 'False', None
     soup = BeautifulSoup(text, 'html.parser')
     is_post_not_exist = soup.find('div', class_='tgme_widget_message_error')
     if is_post_not_exist is None:
         lot_raw = str(soup.find('div', class_='tgme_widget_message_text js-message_text')).replace('<br/>', '\n')
-        au_id = re.sub('t.me/.*?/', '', soup.find('div', class_='tgme_widget_message_link').get_text())
-        lot = BeautifulSoup(lot_raw, 'html.parser').get_text()
-        response = au_id + '/' + re.sub('/', '&#47;', lot).replace('\n', '/')
-    else:
-        response = 'False'
+        get_au_id = soup.find('div', class_='tgme_widget_message_link')
+        if get_au_id:
+            au_id = re.sub('t.me/.*?/', '', get_au_id.get_text())
+            lot = BeautifulSoup(lot_raw, 'html.parser').get_text()
+            response = au_id + '/' + re.sub('/', '&#47;', lot).replace('\n', '/')
+    if is_post_not_exist or get_au_id is None:
         search_error_requests = re.search('Channel with username .*? not found', is_post_not_exist.get_text())
         if search_error_requests:
             response += 'Requests'
@@ -59,20 +62,21 @@ def detector(host):
     global server
     while True:
         try:
-            sleep(0.2)
+            sleep(0.3)
             log_text = server[host]['channel'] + str(server[host]['au_post'])
             text = requests.get(log_text + '?embed=1')
             lot = former(text.text)
             if lot.startswith('False'):
                 if lot == 'FalseRequests':
-                    log_text += ' Превыщены лимиты запросов'
+                    log_text += ' Превышены лимиты запросов'
                 else:
-                    log_text += ' Лота еще нет'
+                    log_text = None
             else:
                 try:
                     bot.edit_message_text(lot, -1001376067490, server[host]['lot_updater'])
                     server[host]['au_post'] += 1
                     log_text += ' записан'
+                    sleep(1.2)
                 except IndexError and Exception as error:
                     log_text += ' (пост не изменился'
                     search = re.search('"Too Many Requests: retry after (\d+)"', str(error))
@@ -81,7 +85,8 @@ def detector(host):
                         log_text += ', слишком много запросов)'
                     else:
                         log_text += ')'
-            printer(log_text)
+            if log_text:
+                printer(log_text)
         except IndexError and Exception:
             executive()
 
