@@ -66,7 +66,7 @@ def detector(host):
             sleep(0.3)
             log_text = server[host]['channel'] + str(server[host]['au_post'])
             text = requests.get(log_text + '?embed=1')
-            lot = former(text.text)
+            lot = former(text.text, log_text)
             if lot.startswith('False'):
                 if lot == 'FalseRequests':
                     log_text += ' Превышены лимиты запросов'
