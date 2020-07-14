@@ -40,7 +40,8 @@ else:
     _thread.exit()
 
 
-def former(text):
+def former(text, link):
+    link = '<a href="' + link + '">'
     response, get_au_id = 'False', None
     soup = BeautifulSoup(text, 'html.parser')
     is_post_not_exist = soup.find('div', class_='tgme_widget_message_error')
@@ -50,7 +51,7 @@ def former(text):
         if get_au_id:
             au_id = re.sub('t.me/.*?/', '', get_au_id.get_text())
             lot = BeautifulSoup(lot_raw, 'html.parser').get_text()
-            response = au_id + '/' + re.sub('/', '&#47;', lot).replace('\n', '/')
+            response = link + au_id + '</a>/' + re.sub('/', '&#47;', lot).replace('\n', '/')
     if is_post_not_exist or get_au_id is None:
         search_error_requests = re.search('Channel with username .*? not found', is_post_not_exist.get_text())
         if search_error_requests:
