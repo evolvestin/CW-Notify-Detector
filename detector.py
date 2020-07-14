@@ -51,7 +51,7 @@ def former(text, link):
         if get_au_id:
             au_id = re.sub('t.me/.*?/', '', get_au_id.get_text())
             lot = BeautifulSoup(lot_raw, 'html.parser').get_text()
-            response = link + au_id + '</a>/' + re.sub('/', '&#47;', lot).replace('\n', '/')
+            response = link + au_id + '</a>/' + re.sub('/', '&#38;#47;', lot).replace('\n', '/')
     if is_post_not_exist or get_au_id is None:
         search_error_requests = re.search('Channel with username .*? not found', is_post_not_exist.get_text())
         if search_error_requests:
@@ -74,7 +74,8 @@ def detector(host):
                     log_text = None
             else:
                 try:
-                    bot.edit_message_text(lot, -1001376067490, server[host]['lot_updater'])
+                    bot.edit_message_text(lot, -1001376067490, server[host]['lot_updater'],
+                                          disable_web_page_preview=True, parse_mode='HTML')
                     server[host]['au_post'] += 1
                     log_text += ' записан'
                     sleep(1.2)
