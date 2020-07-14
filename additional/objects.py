@@ -1,5 +1,5 @@
-import re
 import os
+import re
 import sys
 import time
 import heroku3
@@ -13,6 +13,8 @@ import requests
 import traceback
 import unicodedata
 from time import sleep
+import concurrent.futures
+from ast import literal_eval
 from bs4 import BeautifulSoup
 from datetime import datetime
 from unidecode import unidecode
@@ -20,6 +22,7 @@ week = {'Mon': 'Пн', 'Tue': 'Вт', 'Wed': 'Ср', 'Thu': 'Чт', 'Fri': 'Пт
 token_error = '580232743:AAEfqNw32ob_YkiM22GtcL68jDgP1ZJ_RMU'
 token_start = '456171769:AAGVaAEZTE1n4YLa-RnRmsQ60O9C31otqiI'
 idDevCentre = -1001312302092
+log_file_name = 'log.txt'
 
 
 def bold(text):
@@ -38,33 +41,42 @@ def code(text):
     return '<code>' + str(text) + '</code>'
 
 
-def secure(text):
+def html_secure(text):
     return re.sub('<', '&#60;', str(text))
 
 
-def get_func():
-    caller = inspect.currentframe().f_back.f_back
-    func_name = inspect.getframeinfo(caller)[2]
-    func = caller.f_locals.get(func_name, caller.f_globals.get(func_name))
-    return func
+def time_now():
+    return int(datetime.now().timestamp())
 
 
-def send_dev_message(name, text, tag=code, good=False):
-    if good:
-        bot = telebot.TeleBot(token_start)
-    else:
-        bot = telebot.TeleBot(token_error)
-    message = bot.send_message(idDevCentre, bold(name) + ':\n' + tag(text), parse_mode='HTML')
-    return message
+def get_me_dict(token):
+    me = str(telebot.TeleBot(token).get_me())
+    return literal_eval(me)
 
 
-def printer(printer_text):
-    thread_name = inspect.stack()[1][3]
-    logfile = open('log.txt', 'a')
-    log_print_text = thread_name + '() [' + str(_thread.get_ident()) + '] ' + str(printer_text)
-    logfile.write('\n' + log_time() + log_print_text)
-    logfile.close()
-    print(log_print_text)
+def append_values(array, values):
+    if type(values) != list:
+        values = [values]
+    array.extend(values)
+    return array
+
+
+def chunks(array, separate):
+    separated = []
+    d, r = divmod(len(array), separate)
+    for i in range(separate):
+        sep = (d+1)*(i if i < r else r) + d*(0 if i < r else i - r)
+        separated.append(array[sep:sep+(d+1 if i < r else d)])
+    return separated
+
+
+def concurrent_functions(futures):
+    if type(futures) != list:
+        futures = [futures]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as future_executor:
+        futures = [future_executor.submit(future) for future in futures]
+        for future in concurrent.futures.as_completed(futures):
+            printer(future.result())
 
 
 def stamper(date, pattern=None):
@@ -77,16 +89,30 @@ def stamper(date, pattern=None):
     return stamp
 
 
-def start_message(name, host, stamp1, text=None):
-    start_text = ''
-    if text:
-        start_text = '\n' + str(text)
-    bot = telebot.TeleBot(token_start)
-    start_text = bold(name) + ' (' + code(host) + '):\n' + \
-        log_time(stamp1, code) + '\n' + \
-        log_time(tag=code) + start_text
-    message = bot.send_message(idDevCentre, start_text, parse_mode='HTML')
+def send_dev_message(text, tag=code, good=False):
+    bot_name, host = get_bot_name()
+    if good:
+        bot = telebot.TeleBot(token_start)
+    else:
+        bot = telebot.TeleBot(token_error)
+    message = bot.send_message(idDevCentre, bold(bot_name) + ' (' + code(host) + '):\n' +
+                               tag(html_secure(text)), parse_mode='HTML')
     return message
+
+
+def printer(printer_text):
+    parameter = 'w'
+    directory = os.listdir('.')
+    thread_name = inspect.stack()[1][3]
+    log_print_text = thread_name + '() [' + str(_thread.get_ident()) + '] ' + str(printer_text)
+    file_print_text = log_time() + log_print_text
+    if log_file_name in directory:
+        file_print_text = '\n' + file_print_text
+        parameter = 'a'
+    file = open(log_file_name, parameter)
+    file.write(file_print_text)
+    print(log_print_text)
+    file.close()
 
 
 def query(link, string):
@@ -102,17 +128,18 @@ def query(link, string):
         return None
 
 
-def start_main_bot(library, token):
-    logfile = open('log.txt', 'w')
-    text = 'Начало записи лога ' + log_time() + '\n' + \
-           'Номер главного _thread: ' + str(_thread.get_ident()) + '\n' + \
-           '-' * 50
-    logfile.write(text)
-    logfile.close()
-    if library == 'async':
-        return aiogram.Bot(token)
-    else:
-        return telebot.TeleBot(token)
+def start_message(token_main, stamp1, text=None):
+    bot_name, host = get_bot_name()
+    dev_bot = telebot.TeleBot(token_start)
+    bot_username = str(get_me_dict(token_main).get('username'))
+    head = '<a href="https://t.me/' + bot_username + '">' + \
+        bold(bot_name) + '</a> (' + code(host) + '):\n' + \
+        log_time(stamp1, code) + '\n' + log_time(tag=code)
+    start_text = ''
+    if text:
+        start_text = '\n' + str(text)
+    message = dev_bot.send_message(idDevCentre, head + start_text, parse_mode='HTML')
+    return message
 
 
 def get_bot_name():
@@ -130,6 +157,23 @@ def get_bot_name():
                 app_name = re.sub('-second', '', app_name, 1)
                 host = 'Two'
     return app_name, host
+
+
+def start_main_bot(library, token):
+    parameter = 'w'
+    directory = os.listdir('.')
+    text = 'Начало записи лога ' + log_time() + '\n' + \
+        'Номер главного _thread: ' + str(_thread.get_ident()) + '\n' + '-' * 50
+    if log_file_name in directory:
+        parameter = 'a'
+        text = '\n' + '-' * 50 + '\n' + text
+    file = open(log_file_name, parameter)
+    file.write(text)
+    file.close()
+    if library == 'async':
+        return aiogram.Bot(token)
+    else:
+        return telebot.TeleBot(token)
 
 
 def secure_sql(func, value=None):
@@ -161,15 +205,16 @@ def log_time(stamp=None, tag=None, gmt=3, form=None):
     hour = datetime.utcfromtimestamp(stamp + gmt * 60 * 60).strftime('%H')
     minute = datetime.utcfromtimestamp(stamp).strftime('%M')
     second = datetime.utcfromtimestamp(stamp).strftime('%S')
-    date = week[weekday] + ' ' + day + '.' + month + '.' + year + ' ' + hour + ':' + minute + ':' + second + ' '
+    response = week[weekday] + ' ' + day + '.' + month + '.' + year + ' ' + hour + ':' + minute + ':' + second
     if form == 'channel':
-        date = day + '/' + month + '/' + year + ' ' + hour + ':' + minute + ':' + second
-    if form == 'normal':
-        date = day + '.' + month + '.' + year + ' ' + hour + ':' + minute + ':' + second
-    if tag is None:
-        return date
-    else:
-        return tag(date)
+        response = day + '/' + month + '/' + year + ' ' + hour + ':' + minute + ':' + second
+    elif form == 'normal':
+        response = day + '.' + month + '.' + year + ' ' + hour + ':' + minute + ':' + second
+    if tag:
+        response = tag(response)
+    if form is None:
+        response += ' '
+    return response
 
 
 def properties_json(sheet_id):
@@ -195,27 +240,39 @@ def properties_json(sheet_id):
 
 
 def edit_dev_message(old_message, text):
-    entities_raw = old_message.entities
-    text_list = list(old_message.text)
-    entities = []
-    position = 0
-    for i in text_list:
-        true_length = len(i.encode('utf-16-le')) // 2
-        while true_length > 1:
-            text_list.insert(position + 1, '')
-            true_length -= 1
-        position += 1
-    for i in entities_raw:
-        entities.append(i)
-    entities.reverse()
-    for i in entities:
-        tag = 'code'
-        if i.type == 'bold':
-            tag = 'b'
-        elif i.type == 'italic':
-            tag = 'i'
-        text_list.insert(i.offset + i.length, '</' + tag + '>')
-        text_list.insert(i.offset, '<' + tag + '>')
+    entities = old_message.entities
+    text_list = list(html_secure(old_message.text))
+    if entities:
+        position = 0
+        used_offsets = []
+        for i in text_list:
+            true_length = len(i.encode('utf-16-le')) // 2
+            while true_length > 1:
+                text_list.insert(position + 1, '')
+                true_length -= 1
+            position += 1
+        for i in reversed(entities):
+            end_index = i.offset + i.length - 1
+            if i.offset + i.length >= len(text_list):
+                end_index = len(text_list) - 1
+            if i.type != 'mention':
+                tag = 'code'
+                if i.type == 'bold':
+                    tag = 'b'
+                elif i.type == 'italic':
+                    tag = 'i'
+                elif i.type == 'text_link':
+                    tag = 'a'
+                elif i.type == 'underline':
+                    tag = 'u'
+                elif i.type == 'strikethrough':
+                    tag = 's'
+                if i.offset + i.length not in used_offsets or i.type == 'text_link':
+                    text_list[end_index] += '</' + tag + '>'
+                    if i.type == 'text_link':
+                        tag = 'a href="' + i.url + '"'
+                    text_list[i.offset] = '<' + tag + '>' + text_list[i.offset]
+                    used_offsets.append(i.offset + i.length)
     new_text = ''.join(text_list) + text
     bot = telebot.TeleBot(token_start)
     try:
@@ -239,19 +296,19 @@ def send_json(logs, name, error):
                     json_text += '[' + unicodedata.name(character) + ']'
                 except ValueError:
                     json_text += '[???]'
-    if len(error) <= 1000:
-        if json_text != '':
-            doc = open(name + '.json', 'w')
-            doc.write(json_text)
-            doc.close()
-            doc = open(name + '.json', 'rb')
-            bot.send_document(idDevCentre, doc, caption=error, parse_mode='HTML')
-        else:
-            bot.send_message(idDevCentre, error, parse_mode='HTML')
-    if 1000 < len(error) <= 4000:
+    if json_text:
+        doc = open(name + '.json', 'w')
+        doc.write(json_text)
+        doc.close()
+        caption = None
+        if len(error) <= 1024:
+            caption = error
+        doc = open(name + '.json', 'rb')
+        bot.send_document(idDevCentre, doc, caption=caption, parse_mode='HTML')
+    if (json_text == '' and len(error) <= 1024) or (1024 < len(error) <= 4096):
         bot.send_message(idDevCentre, error, parse_mode='HTML')
-    if len(error) > 4000:
-        separator = 4000
+    if len(error) > 4096:
+        separator = 4096
         split_sep = len(error) // separator
         split_mod = len(error) / separator - len(error) // separator
         if split_mod != 0:
@@ -262,45 +319,52 @@ def send_json(logs, name, error):
                 bot.send_message(idDevCentre, split_error, parse_mode='HTML')
 
 
-def executive(library, logs):
+def executive(logs):
     retry = 100
-    name = secure(inspect.stack()[2][3])
-    error = 'Вылет ' + bold(name + '()') + '\n\n'
+    func = None
+    stack = inspect.stack()
+    bot_name, host = get_bot_name()
+    name = html_secure(stack[len(stack) - 1][3])
     exc_type, exc_value, exc_traceback = sys.exc_info()
     error_raw = traceback.format_exception(exc_type, exc_value, exc_traceback)
-    if library == 'async':
-        search_retry = 'Retry in (\d+) seconds'
-    else:
-        search_retry = '"Too Many Requests: retry after (\d+)"'
+    search_retry = 'Retry in (\d+) seconds|"Too Many Requests: retry after (\d+)"'
+    error = 'Вылет ' + bold(bot_name) + '(' + code(host) + ').' + bold(name + '()') + '\n\n'
     for i in error_raw:
-        error += secure(i)
+        error += html_secure(i)
         search = re.search(search_retry, str(i))
         if search:
             retry = int(search.group(1)) + 10
+
+    if logs is None:
+        caller = inspect.currentframe().f_back.f_back
+        func_name = inspect.getframeinfo(caller)[2]
+        func = caller.f_locals.get(func_name, caller.f_globals.get(func_name))
+    else:
+        retry = 0
+
     if retry >= 100:
         send_json(logs, name, error)
-    if logs is None:
-        func = get_func()
-        return {'name': name, 'retry': retry, 'function': func}
-    else:
-        return {'name': name, 'retry': 0, 'function': None}
+    return retry, func, name
 
 
-def send_starting_function(status):
-    if status['retry'] >= 100:
+def send_starting_function(retry, name):
+    if retry >= 100:
+        bot_name, host = get_bot_name()
         bot = telebot.TeleBot(token_error)
-        bot.send_message(idDevCentre, 'Запущен ' + bold(status['name'] + '()'), parse_mode='HTML')
+        function_name = bold(bot_name) + '(' + code(host) + ').' + bold(name + '()')
+        bot.send_message(idDevCentre, 'Запущен ' + function_name, parse_mode='HTML')
 
 
 def thread_exec(logs=None):
-    status = executive('non-async', logs)
-    sleep(status['retry'])
-    if status['function']:
-        _thread.start_new_thread(status['function'], ())
-    send_starting_function(status)
+    retry, func, name = executive(logs)
+    sleep(retry)
+    if func:
+        _thread.start_new_thread(func, ())
+    send_starting_function(retry, name)
+    _thread.exit()
 
 
 async def async_exec(logs=None):
-    status = executive('async', logs)
-    await asyncio.sleep(status['retry'])
-    send_starting_function(status)
+    retry, func, name = executive(logs)
+    await asyncio.sleep(retry)
+    send_starting_function(retry, name)
