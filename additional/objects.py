@@ -19,8 +19,8 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from unidecode import unidecode
 week = {'Mon': 'Пн', 'Tue': 'Вт', 'Wed': 'Ср', 'Thu': 'Чт', 'Fri': 'Пт', 'Sat': 'Сб', 'Sun': 'Вс'}
-token_error = '580232743:AAEfqNw32ob_YkiM22GtcL68jDgP1ZJ_RMU'
-token_start = '456171769:AAGVaAEZTE1n4YLa-RnRmsQ60O9C31otqiI'
+bot_error = telebot.TeleBot('580232743:AAEfqNw32ob_YkiM22GtcL68jDgP1ZJ_RMU')
+bot_start = telebot.TeleBot('456171769:AAGVaAEZTE1n4YLa-RnRmsQ60O9C31otqiI')
 idDevCentre = -1001312302092
 log_file_name = 'log.txt'
 
@@ -91,12 +91,11 @@ def stamper(date, pattern=None):
 
 def send_dev_message(text, tag=code, good=False):
     bot_name, host = get_bot_name()
+    bot = bot_error
     if good:
-        bot = telebot.TeleBot(token_start)
-    else:
-        bot = telebot.TeleBot(token_error)
-    message = bot.send_message(idDevCentre, bold(bot_name) + ' (' + code(host) + '):\n' +
-                               tag(html_secure(text)), parse_mode='HTML')
+        bot = bot_start
+    text = bold(bot_name) + ' (' + code(host) + '):\n' + tag(html_secure(text))
+    message = bot.send_message(idDevCentre, text, disable_web_page_preview=True, parse_mode='HTML')
     return message
 
 
@@ -130,7 +129,6 @@ def query(link, string):
 
 def start_message(token_main, stamp1, text=None):
     bot_name, host = get_bot_name()
-    dev_bot = telebot.TeleBot(token_start)
     bot_username = str(get_me_dict(token_main).get('username'))
     head = '<a href="https://t.me/' + bot_username + '">' + \
         bold(bot_name) + '</a> (' + code(host) + '):\n' + \
@@ -138,7 +136,8 @@ def start_message(token_main, stamp1, text=None):
     start_text = ''
     if text:
         start_text = '\n' + str(text)
-    message = dev_bot.send_message(idDevCentre, head + start_text, parse_mode='HTML')
+    text = head + start_text
+    message = bot_start.send_message(idDevCentre, text, disable_web_page_preview=True, parse_mode='HTML')
     return message
 
 
@@ -274,18 +273,17 @@ def edit_dev_message(old_message, text):
                     text_list[i.offset] = '<' + tag + '>' + text_list[i.offset]
                     used_offsets.append(i.offset + i.length)
     new_text = ''.join(text_list) + text
-    bot = telebot.TeleBot(token_start)
     try:
-        message = bot.edit_message_text(new_text, old_message.chat.id, old_message.message_id, parse_mode='HTML')
+        message = bot_start.edit_message_text(new_text, old_message.chat.id, old_message.message_id,
+                                              disable_web_page_preview=True, parse_mode='HTML')
     except IndexError and Exception:
         new_text += italic('\nНе смог отредактировать сообщение. Отправлено новое')
-        message = bot.send_message(idDevCentre, new_text, parse_mode='HTML')
+        message = bot_start.send_message(idDevCentre, new_text, parse_mode='HTML')
     return message
 
 
 def send_json(logs, name, error):
     json_text = ''
-    bot = telebot.TeleBot(token_error)
     if type(logs) is str:
         for character in logs:
             replaced = unidecode(str(character))
@@ -304,9 +302,9 @@ def send_json(logs, name, error):
         if len(error) <= 1024:
             caption = error
         doc = open(name + '.json', 'rb')
-        bot.send_document(idDevCentre, doc, caption=caption, parse_mode='HTML')
+        bot_error.send_document(idDevCentre, doc, caption=caption, parse_mode='HTML')
     if (json_text == '' and len(error) <= 1024) or (1024 < len(error) <= 4096):
-        bot.send_message(idDevCentre, error, parse_mode='HTML')
+        bot_error.send_message(idDevCentre, error, parse_mode='HTML')
     if len(error) > 4096:
         separator = 4096
         split_sep = len(error) // separator
@@ -316,19 +314,21 @@ def send_json(logs, name, error):
         for i in range(0, split_sep):
             split_error = error[i * separator:(i + 1) * separator]
             if len(split_error) > 0:
-                bot.send_message(idDevCentre, split_error, parse_mode='HTML')
+                bot_error.send_message(idDevCentre, split_error, parse_mode='HTML')
 
 
 def executive(logs):
     retry = 100
     func = None
+    func_locals = []
     stack = inspect.stack()
     bot_name, host = get_bot_name()
     name = html_secure(stack[len(stack) - 1][3])
     exc_type, exc_value, exc_traceback = sys.exc_info()
+    full_name = bold(bot_name) + '(' + code(host) + ').' + bold(name + '()')
     error_raw = traceback.format_exception(exc_type, exc_value, exc_traceback)
     search_retry = 'Retry in (\d+) seconds|"Too Many Requests: retry after (\d+)"'
-    error = 'Вылет ' + bold(bot_name) + '(' + code(host) + ').' + bold(name + '()') + '\n\n'
+    error = 'Вылет ' + full_name + '\n\n'
     for i in error_raw:
         error += html_secure(i)
         search = re.search(search_retry, str(i))
@@ -338,33 +338,35 @@ def executive(logs):
     if logs is None:
         caller = inspect.currentframe().f_back.f_back
         func_name = inspect.getframeinfo(caller)[2]
+        for a in caller.f_locals:
+            func_locals.append(caller.f_locals.get(a))
         func = caller.f_locals.get(func_name, caller.f_globals.get(func_name))
     else:
         retry = 0
 
     if retry >= 100:
         send_json(logs, name, error)
-    return retry, func, name
+    return retry, func, func_locals, full_name
 
 
 def send_starting_function(retry, name):
     if retry >= 100:
-        bot_name, host = get_bot_name()
-        bot = telebot.TeleBot(token_error)
-        function_name = bold(bot_name) + '(' + code(host) + ').' + bold(name + '()')
-        bot.send_message(idDevCentre, 'Запущен ' + function_name, parse_mode='HTML')
+        bot_error.send_message(idDevCentre, 'Запущен ' + name, parse_mode='HTML')
 
 
 def thread_exec(logs=None):
-    retry, func, name = executive(logs)
+    retry, func, func_locals, full_name = executive(logs)
     sleep(retry)
     if func:
-        _thread.start_new_thread(func, ())
-    send_starting_function(retry, name)
+        try:
+            _thread.start_new_thread(func, (*func_locals,))
+        except IndexError and Exception as error:
+            send_dev_message(full_name + ':\n' + error, code)
+    send_starting_function(retry, full_name)
     _thread.exit()
 
 
 async def async_exec(logs=None):
-    retry, func, name = executive(logs)
+    retry, func, func_locals, full_name = executive(logs)
     await asyncio.sleep(retry)
-    send_starting_function(retry, name)
+    send_starting_function(retry, full_name)
