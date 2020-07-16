@@ -343,8 +343,6 @@ def executive(logs):
         func = caller.f_locals.get(func_name, caller.f_globals.get(func_name))
     else:
         retry = 0
-
-    if retry >= 100:
         send_json(logs, name, error)
     return retry, func, func_locals, full_name
 
