@@ -323,8 +323,8 @@ def executive(logs):
     func_locals = []
     stack = inspect.stack()
     bot_name, host = get_bot_name()
-    name = html_secure(stack[len(stack) - 1][3])
     exc_type, exc_value, exc_traceback = sys.exc_info()
+    name = re.sub('[<>]', '', str(stack[len(stack) - 1][3]))
     full_name = bold(bot_name) + '(' + code(host) + ').' + bold(name + '()')
     error_raw = traceback.format_exception(exc_type, exc_value, exc_traceback)
     search_retry = 'Retry in (\d+) seconds|"Too Many Requests: retry after (\d+)"'
