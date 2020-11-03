@@ -1,17 +1,16 @@
+import os
 import re
+import objects
 import _thread
 import requests
 from time import sleep
 from bs4 import BeautifulSoup
-from datetime import datetime
-from additional.objects import thread_exec as executive
-from additional.objects import bold, query, printer, start_message, start_main_bot
+from objects import thread_exec as executive
 
-stamp1 = int(datetime.now().timestamp())
-token = '659292396:AAEeJKTEU4g2168cADrQx6QmN7IzSrJX_Ok'
-lot_updater_channel = 'https://t.me/lot_updater/'
-bot = start_main_bot('non-async', token)
 idMe = 396978030
+stamp1 = objects.time_now()
+lot_updater_channel = 'https://t.me/lot_updater/'
+bot = objects.start_main_bot('non-async', os.environ['TOKEN'])
 server = {
     'eu': {
         'channel': 'https://t.me/ChatWarsAuction/',
@@ -26,17 +25,17 @@ server = {
 }
 
 for s in server:
-    result = query(lot_updater_channel + str(server[s]['lot_updater']), '(.*)')
+    result = objects.query(lot_updater_channel + str(server[s]['lot_updater']), '(.*)')
     if result:
         split_result = result.group(1).split('/')
         server[s]['au_post'] = int(split_result[0]) + 1
 
 
 if server['eu']['au_post'] and server['ru']['au_post']:
-    start_message(token, stamp1)
+    objects.start_message(os.environ['TOKEN'], stamp1)
 else:
-    additional_text = 'Нет подключения к ' + lot_updater_channel + '\n' + bold('Бот выключен')
-    start_message(token, stamp1, additional_text)
+    additional_text = 'Нет подключения к ' + lot_updater_channel + '\n' + objects.bold('Бот выключен')
+    objects.start_message(os.environ['TOKEN'], stamp1, additional_text)
     _thread.exit()
 
 
@@ -81,14 +80,14 @@ def detector(host):
                     sleep(1.2)
                 except IndexError and Exception as error:
                     log_text += ' (пост не изменился'
-                    search = re.search('"Too Many Requests: retry after (\d+)"', str(error))
+                    search = re.search(r'"Too Many Requests: retry after (\d+)"', str(error))
                     if search:
                         sleep(int(search.group(1)))
                         log_text += ', слишком много запросов)'
                     else:
                         log_text += ')'
             if log_text:
-                printer(log_text)
+                objects.printer(log_text)
         except IndexError and Exception:
             executive()
 
