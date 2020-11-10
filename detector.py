@@ -14,12 +14,12 @@ bot = objects.start_main_bot('non-async', os.environ['TOKEN'])
 server = {
     'eu': {
         'channel': 'https://t.me/ChatWarsAuction/',
-        'lot_updater': 50,
+        'lot_updater': 80,
         'au_post': None
     },
     'ru': {
         'channel': 'https://t.me/chatwars3/',
-        'lot_updater': 51,
+        'lot_updater': 85,
         'au_post': None
     }
 }
