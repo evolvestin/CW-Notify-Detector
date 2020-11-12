@@ -5,12 +5,11 @@ import _thread
 import requests
 from time import sleep
 from bs4 import BeautifulSoup
-from objects import thread_exec as executive
+stamp1 = objects.time_now()
 
 idMe = 396978030
-stamp1 = objects.time_now()
+Auth = objects.AuthCentre(os.environ['TOKEN'])
 lot_updater_channel = 'https://t.me/lot_updater/'
-bot = objects.start_main_bot('non-async', os.environ['TOKEN'])
 server = {
     'eu': {
         'channel': 'https://t.me/ChatWarsAuction/',
@@ -30,12 +29,13 @@ for s in server:
         split_result = result.group(1).split('/')
         server[s]['au_post'] = int(split_result[0]) + 1
 
-
+executive = Auth.thread_exec
+bot = Auth.start_main_bot('non-async')
 if server['eu']['au_post'] and server['ru']['au_post']:
-    objects.start_message(os.environ['TOKEN'], stamp1)
+    Auth.start_message(stamp1)
 else:
     additional_text = 'Нет подключения к ' + lot_updater_channel + '\n' + objects.bold('Бот выключен')
-    objects.start_message(os.environ['TOKEN'], stamp1, additional_text)
+    Auth.start_message(stamp1, additional_text)
     _thread.exit()
 
 
@@ -100,8 +100,6 @@ def repeat_all_messages(message):
         else:
             if message.text.startswith('/log'):
                 bot.send_document(idMe, open('log.txt', 'rt'))
-            else:
-                bot.send_message(message.chat.id, 'Я работаю')
     except IndexError and Exception:
         executive(str(message))
 
@@ -116,6 +114,6 @@ def telegram_polling():
 
 
 if __name__ == '__main__':
-    _thread.start_new_thread(detector, ('eu',))
-    _thread.start_new_thread(detector, ('ru',))
+    for host_channel in ['eu', 'ru']:
+        _thread.start_new_thread(detector, (host_channel,))
     telegram_polling()
