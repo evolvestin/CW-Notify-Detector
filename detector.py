@@ -6,19 +6,19 @@ import requests
 from time import sleep
 from bs4 import BeautifulSoup
 stamp1 = objects.time_now()
-
+# ====================================================================================
 idMe = 396978030
 Auth = objects.AuthCentre(os.environ['TOKEN'])
 lot_updater_channel = 'https://t.me/lot_updater/'
 server = {
     'eu': {
         'channel': 'https://t.me/ChatWarsAuction/',
-        'lot_updater': 80,
+        'lot_updater': int(os.environ['EU_POST_ID']),
         'au_post': None
     },
     'ru': {
         'channel': 'https://t.me/chatwars3/',
-        'lot_updater': 85,
+        'lot_updater': int(os.environ['RU_POST_ID']),
         'au_post': None
     }
 }
@@ -37,6 +37,7 @@ else:
     additional_text = 'Нет подключения к ' + lot_updater_channel + '\n' + objects.bold('Бот выключен')
     Auth.start_message(stamp1, additional_text)
     _thread.exit()
+# ====================================================================================
 
 
 def former(text, link):
@@ -95,11 +96,8 @@ def detector(host):
 @bot.message_handler(func=lambda message: message.text)
 def repeat_all_messages(message):
     try:
-        if message.chat.id != idMe:
-            bot.send_message(message.chat.id, 'К тебе этот бот не имеет отношения, уйди пожалуйста')
-        else:
-            if message.text.startswith('/log'):
-                bot.send_document(idMe, open('log.txt', 'rt'))
+        if message.chat.id == idMe and message.text.startswith('/log'):
+            bot.send_document(message.chat.id, open('log.txt', 'r'))
     except IndexError and Exception:
         executive(str(message))
 
