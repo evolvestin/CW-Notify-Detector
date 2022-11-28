@@ -111,7 +111,7 @@ def telegram_polling():
         telegram_polling()
 
 
-if __name__ == '__main__':
+def start():
     for host_channel in ['eu', 'ru']:
         _thread.start_new_thread(detector, (host_channel,))
     telegram_polling()
