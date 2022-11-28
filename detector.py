@@ -1,9 +1,9 @@
 import os
 import re
-import objects
 import _thread
 import requests
 from time import sleep
+import functions as objects
 from bs4 import BeautifulSoup
 stamp1 = objects.time_now()
 # ====================================================================================
