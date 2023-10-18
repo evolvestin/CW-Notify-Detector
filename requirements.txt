@@ -1,3 +1,8 @@
 requests>=2.20.0
 e-objects>=1.2.1
-beautifulsoup4==4.8.0
+beautifulsoup4~=4.9.3
+
+Telethon~=1.28.5
+heroku3~=5.1.4
+aiogram~=2.20
+Unidecode~=1.2.0
