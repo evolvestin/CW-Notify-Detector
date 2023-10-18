@@ -59,7 +59,7 @@ def editor():
             if responses:
                 host, message = responses.pop(0)
                 if message.id and message.message and message.date:
-                    log_text = f"{server[host]['channel']}/{message.id}"
+                    log_text = f"https://t.me/{server[host]['channel']}/{message.id}"
                     link = objects.html_link(log_text, message.id)
                     text = f"{link}/{re.sub('/', '&#38;#47;', message.message)}".replace('\n', '/')
                     try:
