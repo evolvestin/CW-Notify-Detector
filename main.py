@@ -1,117 +1,194 @@
-import os
-import re
 import asyncio
-import _thread
-from time import sleep
-from GDrive import Drive
-import functions as objects
-from telethon.sync import TelegramClient, events
-# =====================================================================================================================
-stamp1 = objects.time_now()
-if __name__ == '__main__':
-    import environ
-    objects.printer(f'Запуск с окружением {environ.environ}')
+import html
+import logging
+import os
+import sys
+import time
+from datetime import datetime, timezone
 
-responses = []
-Auth = objects.AuthCentre(os.environ['TOKEN'])
-lot_updater_channel = 'https://t.me/lot_updater/'
-server = {
-    'eu': {
-        'channel': 'ChatWarsAuction',
-        'lot_updater': int(os.environ['EU_POST_ID']),
-        'au_post': None
-    },
-    'ru': {
-        'channel': 'chatwars3',
-        'lot_updater': int(os.environ['RU_POST_ID']),
-        'au_post': None
-    }
-}
+from aiogram import Bot
+from aiogram.types import BufferedInputFile, User
+from telethon import TelegramClient, events
+from telethon.tl.custom import Message
 
-bot = Auth.start_main_bot('non-async')
-for s in server:
-    result = objects.query(lot_updater_channel + str(server[s]['lot_updater']), '(.*)')
-    if result:
-        split_result = result.group(1).split('/')
-        server[s]['au_post'] = int(split_result[0]) + 1
-# =====================================================================================================================
+from config import TELEGRAM_HOST, Config, code, configure_header, html_link
+from drive_utils import GDriveManager
+
+logging.basicConfig(
+    level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+bot = Bot(token=Config.BOT_TOKEN)
 
 
-def error_handler():
-    try:
-        Auth.executive(None)
-    except IndexError and Exception:
-        sleep(10)
+async def send_alert(text: str, escape_html: bool = True) -> None:
+    """
+    Sends an alert message to the configured developer chat.
+    If the message is too long, it is sent as a text file attachment.
 
+    Args:
+        text: The content of the alert.
+        escape_html: Whether to escape HTML characters in the text. Defaults to True.
+    """
+    max_retries = 6
+    delay = 0.5
 
-def editor():
-    global responses
-    while True:
+    for attempt in range(max_retries):
         try:
-            if responses:
-                host, message = responses.pop(0)
-                if message.id and message.message and message.date:
-                    log_text = f"https://t.me/{server[host]['channel']}/{message.id}"
-                    link = objects.html_link(log_text, message.id)
-                    text = f"{link}/{re.sub('/', '&#38;#47;', message.message)}".replace('\n', '/')
-                    edit_message(host, text, log_text)
-            sleep(0.05)
-        except IndexError and Exception:
-            error_handler()
+            text_str = str(text)
+            if len(text_str) > 4000:
+                file_data = text_str.encode('utf-8')
+                document = BufferedInputFile(file_data, filename=f'alert_{int(time.time())}.txt')
+
+                await bot.send_document(
+                    chat_id=Config.DEV_CHAT_ID,
+                    document=document,
+                    caption=(f'{Config.ALERT_HEADER}\nLog content is too long, attached as file.'),
+                    parse_mode='HTML',
+                )
+            else:
+                await bot.send_message(
+                    chat_id=Config.DEV_CHAT_ID,
+                    text=(
+                        f'{Config.ALERT_HEADER}\n'
+                        f'{html.escape(text_str) if escape_html else text_str}'
+                    ),
+                    parse_mode='HTML',
+                )
+            return
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error(f'Failed to send alert after {max_retries} attempts: {e}')
+            else:
+                logger.warning(f'Alert send failed: {e}. Retrying in {delay}s...')
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 3600)
 
 
-def edit_message(host: str, text: str, log_text: str) -> None:
+async def update_lot_message(message: Message, host_key: str) -> None:
+    """
+    Updates the auction lot message in the target channel with the content from the source.
+    It also updates the health check file.
+
+    Args:
+        message: The original message object from Telethon.
+        host_key: The key corresponding to the source server in the configuration.
+    """
     try:
-        bot.edit_message_text(text, -1001376067490, server[host]['lot_updater'],
-                              disable_web_page_preview=True, parse_mode='HTML')
-        log_text += ' записан'
-        sleep(1)
-    except IndexError and Exception as error:
-        search = re.search(r'"Too Many Requests: retry after (\d+)"', str(error))
-        if search:
-            sleep(int(search.group(1)))
-            edit_message(host, text, log_text)
-        else:
-            error_handler()
-            log_text += ' (пост не изменился)'
-    objects.printer(log_text)
+        log_link = f'{TELEGRAM_HOST}{host_key}/{message.id}'
+        safe_text = message.message.replace('/', '&#38;#47;').replace('\n', '/')
+
+        await bot.edit_message_text(
+            text=f'{html_link(log_link, str(message.id))}/{safe_text}',
+            chat_id=Config.TARGET_CHANNEL_ID,
+            message_id=Config.SERVERS[host_key]['post_id'],
+            parse_mode='HTML',
+            disable_web_page_preview=True,
+        )
+        logger.info(f'Updated post for {host_key}: {message.id}')
+
+        with open('tmp/healthy', 'w', encoding='utf-8') as f:
+            f.write(str(datetime.now().timestamp()))
+
+    except Exception as e:
+        err_msg = f'Error updating message: {e}'
+        await send_alert(err_msg)
+        logger.error(err_msg)
 
 
-def detector(host):
-    global server, responses
+async def main() -> None:
+    """
+    The main entry point of the application.
+    Initializes Google Drive, downloads the session, and starts the Telegram client listener.
+    """
+    os.makedirs('tmp', exist_ok=True)
+
+    async with bot:
+        try:
+            drive = GDriveManager(Config.GOOGLE_CREDS_JSON)
+            drive.download_session_file(Config.SESSION_NAME)
+        except Exception as e:
+            await send_alert(f'Startup failed (GDrive): {e}')
+            sys.exit(1)
+
+        client = TelegramClient(Config.SESSION_NAME, Config.API_ID, Config.API_HASH)
+
+        @client.on(events.NewMessage(chats=list(Config.SERVERS.keys())))
+        async def handler(event: events.NewMessage.Event) -> None:
+            if event.message:
+                chat_username: str = event.chat.username
+                if chat_username in Config.SERVERS:
+                    await update_lot_message(event.message, chat_username)
+
+        try:
+            await client.start()
+            bot_info: User = await bot.get_me()
+            if bot_info.username:
+                Config.ALERT_HEADER = configure_header(bot_info.username)
+
+            now = datetime.now(tz=timezone.utc)
+            await send_alert(code(now.strftime('%Y-%m-%d %H:%M:%S')), escape_html=False)
+
+            with open('tmp/healthy', 'w') as f:
+                f.write('start')
+
+            logger.info('Client started, listening...')
+            await client.run_until_disconnected()
+
+        except Exception as e:
+            logger.critical(f'Critical error in main loop: {e}')
+            await send_alert(f'CRASH: {e}')
+            sys.exit(1)
+
+
+def manage_crash_backoff() -> None:
+    """
+    Manages the delay between restarts in case of crashes using an exponential backoff strategy.
+    It tracks crash attempts in a temporary state file.
+    """
+    state_file = 'tmp/crash_state'
+    reset_window = 300
+    free_attempts = 5
+
+    now = time.time()
+    attempts = 0
+
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, 'r', encoding='utf-8') as f:
+                content = f.read().strip().split('|')
+                if len(content) == 2:
+                    last_ts = float(content[0])
+                    prev_attempts = int(content[1])
+
+                    if now - last_ts < reset_window:
+                        attempts = prev_attempts
+        except Exception:
+            pass
+
+    attempts += 1
+
     try:
-        asyncio.set_event_loop(asyncio.new_event_loop())
-        client = TelegramClient(os.environ['session'], int(os.environ['api_id']), os.environ['api_hash']).start()
-        with client:
-            objects.printer(f'Канал в работе: {server[host]}')
+        with open(state_file, 'w', encoding='utf-8') as f:
+            f.write(f'{now}|{attempts}')
+    except Exception:
+        pass
 
-            @client.on(events.NewMessage(chats=server[host]['channel']))
-            async def handler(response):
-                responses.append([host, response.message]) if response.message else None
-
-            client.run_until_disconnected()
-    except IndexError and Exception:
-        error_handler()
-        _thread.start_new_thread(detector, (host,))
-
-
-def start(stamp):
-    objects.environmental_files()
-    drive_client = Drive('google.json')
-    for file in drive_client.files():
-        if file['name'] == f"{os.environ['session']}.session":
-            drive_client.download_file(file['id'], file['name'])
-
-    if server['eu']['au_post'] and server['ru']['au_post']:
-        Auth.start_message(stamp)
-    else:
-        Auth.start_message(stamp, f"Нет подключения к {lot_updater_channel}\n"
-                                  f"{objects.bold('Бот выключен')}")
-        _thread.exit()
-    for host_channel in ['eu']:  # ['eu', 'ru']
-        _thread.start_new_thread(detector, (host_channel,))
-    editor()
+    if attempts > free_attempts:
+        delay = min(2 ** (attempts - free_attempts), 3600)
+        logger.warning(
+            f'Crash loop detected ({attempts} attempts). Backoff active: sleeping {delay}s...'
+        )
+        time.sleep(delay)
 
 
 if __name__ == '__main__':
-    start(stamp1)
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    except Exception as e:
+        logger.critical(f'Fatal runtime error: {e}')
+    finally:
+        manage_crash_backoff()
