@@ -1,5 +1,5 @@
 aiogram==3.22.0
 Telethon==1.42.0
 PyDrive2==1.21.3
-python-dotenv==1.2.1
+python-dotenv==1.2.2
 oauth2client==4.1.3
